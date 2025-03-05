@@ -24,7 +24,7 @@
   "author": "Victor Zhang",
   "license": "MIT",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^0.3.0",
+    "modelcontextprotocol": "modelcontextprotocol/typescript-sdk",
     "@prisma/client": "^5.10.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.2",
