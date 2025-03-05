@@ -81,38 +81,27 @@ yarn install
 ```
 
 3. Set up environment variables:
-Create a `.env` file in the root directory with the following variables:
-```env
-# Server
-PORT=3000
-NODE_ENV=development
-LOG_LEVEL=debug
-
-# Database
-DATABASE_URL=postgres://username:password@localhost:5432/mcp_blockchain
-
-# Redis (optional)
-REDIS_URL=redis://localhost:6379
-
-# JWT
-JWT_SECRET=your-jwt-secret-change-this
-JWT_EXPIRES_IN=1d
-
-# Blockchain
-INFURA_API_KEY=your-infura-api-key
-ETHERSCAN_API_KEY=your-etherscan-api-key
-DEFAULT_NETWORK=sepolia
-
-# Web DApp
-WEB_DAPP_URL=http://localhost:3001
+Create a `.env` file in the root directory (or copy from `.env.example`):
+```bash
+cp .env.example .env
+# Edit .env with your configurations
 ```
 
 4. Set up the database:
 ```bash
+# For detailed instructions, see the Database Setup Guide
+# docs/database-setup.md
+
+# Create the PostgreSQL database
+createdb mcp_blockchain
+
+# Run database migrations
 npm run db:migrate
 # or
 yarn db:migrate
 ```
+
+See [Database Setup Guide](docs/database-setup.md) for detailed instructions on installing and configuring PostgreSQL.
 
 5. Start the server:
 ```bash
@@ -175,6 +164,18 @@ const result = await callTool("get-balance", {
   address: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e"
 });
 ```
+
+## Troubleshooting
+
+If you encounter issues with dependencies:
+
+```bash
+# MCP SDK issue - install directly from GitHub
+npm uninstall @modelcontextprotocol/sdk
+npm install modelcontextprotocol/typescript-sdk
+```
+
+For database connection issues, see the [Database Setup Guide](docs/database-setup.md).
 
 ## License
 
