@@ -6,47 +6,175 @@ A secure system enabling AI assistants to interact with blockchain smart contrac
 
 This project addresses a key challenge in AI-blockchain integration: allowing AI assistants to read blockchain data and prepare transactions while ensuring users maintain exclusive control over transaction signing and private keys.
 
-![Architecture Overview](docs/images/architecture-overview.png)
+The system consists of:
 
-## Key Features
+1. **MCP Server**: A Model Context Protocol server that exposes blockchain operations as tools that can be used by AI assistants
+2. **Web DApp**: A React application that provides a user interface for wallet connection and transaction signing
+3. **Database**: PostgreSQL database for storing users, API keys, and transaction records
+4. **Caching**: Redis for caching frequently accessed data
 
-- 🔒 **Secure by Design**: Private keys never leave the user's wallet
-- 🤖 **AI Integration**: Simple API for AI assistants to query blockchain data
-- 📝 **Transaction Preparation**: AI can prepare unsigned transactions for user review
-- ✅ **User Approval**: Clear UI for reviewing and approving transactions
-- 🌐 **Multi-Chain Support**: Works with multiple blockchain networks
-- 🛠️ **MCP Protocol**: Built on the Model Context Protocol for standardized AI context handling
+## Features
 
-## Components
+### MCP Server Features
 
-1. **MCP Server**: Node.js server handling blockchain operations and transaction preparation
-2. **Web DApp**: React application for wallet connection and transaction approval
-3. **AI Integration**: API and SDK for AI assistants to use the MCP Server
+- **Blockchain Data Access**: Read balances, contract state, and other on-chain data
+- **Transaction Preparation**: Create unsigned transactions for user approval
+- **Multi-Chain Support**: Works with Ethereum, Polygon, and other EVM-compatible chains
+- **Smart Contract Interaction**: Read from verified smart contracts on supported networks
+- **Security-First Design**: Private keys never leave the user's wallet
 
-## Documentation
+### Web DApp Features
 
-- [Architecture Overview](docs/architecture.md)
-- [API Documentation](docs/api.md)
-- [Security Considerations](docs/security.md)
-- [Getting Started](docs/getting-started.md)
+- **Wallet Integration**: Connect with MetaMask and other Web3 wallets
+- **Transaction Review**: Clear UI for reviewing transaction details before signing
+- **Transaction Signing**: Sign transactions with connected wallet
+- **Transaction Tracking**: Monitor status of submitted transactions
+- **Mobile Compatibility**: Responsive design works on all devices
+
+## Security Principles
+
+1. **Private Key Isolation**: Keys never leave the user's wallet
+2. **Transaction Verification**: Clear UI for reviewing transaction details
+3. **API Authentication**: Secure API key management
+4. **Rate Limiting**: Prevent abuse
+5. **Input Validation**: Sanitize all inputs
+6. **Audit Logging**: Track all operations
+7. **HTTPS Only**: Secure communications
+8. **Content Security Policy**: Prevent XSS
+
+## Transaction Flow
+
+1. AI assistant requests transaction through MCP Server
+2. MCP Server prepares unsigned transaction with UUID
+3. MCP Server returns transaction URL to AI assistant
+4. AI assistant provides URL to user
+5. User opens URL in browser
+6. User connects wallet and reviews transaction details
+7. User approves and signs transaction with their wallet
+8. Web DApp submits signed transaction to blockchain
+9. Transaction status is updated and tracked
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js (v18 or higher)
+- npm or yarn
+- PostgreSQL
+- Redis (optional, for caching)
+- Infura API key (for blockchain access)
+- Etherscan API key (for contract ABIs)
+
+### Installation
+
+1. Clone the repository:
+```bash
+git clone https://github.com/zhangzhongnan928/mcp-blockchain-server.git
+cd mcp-blockchain-server
+```
+
+2. Install dependencies:
+```bash
+npm install
+# or
+yarn install
+```
+
+3. Set up environment variables:
+Create a `.env` file in the root directory with the following variables:
+```env
+# Server
+PORT=3000
+NODE_ENV=development
+LOG_LEVEL=debug
+
+# Database
+DATABASE_URL=postgres://username:password@localhost:5432/mcp_blockchain
+
+# Redis (optional)
+REDIS_URL=redis://localhost:6379
+
+# JWT
+JWT_SECRET=your-jwt-secret-change-this
+JWT_EXPIRES_IN=1d
+
+# Blockchain
+INFURA_API_KEY=your-infura-api-key
+ETHERSCAN_API_KEY=your-etherscan-api-key
+DEFAULT_NETWORK=sepolia
+
+# Web DApp
+WEB_DAPP_URL=http://localhost:3001
+```
+
+4. Set up the database:
+```bash
+npm run db:migrate
+# or
+yarn db:migrate
+```
+
+5. Start the server:
+```bash
+npm run dev
+# or
+yarn dev
+```
+
+### Using Docker Compose
+
+For a quick start using Docker:
+
+```bash
+# Create .env file with required environment variables
+cp .env.example .env
+# Edit .env with your configurations
+
+# Start the services
+docker-compose up -d
+```
+
+This will start:
+- PostgreSQL database
+- Redis cache
+- MCP Server
+- Web DApp
 
 ## Development
 
-```bash
-# Clone the repository
-git clone https://github.com/zhangzhongnan928/mcp-blockchain-server.git
-cd mcp-blockchain-server
+### Server Structure
 
-# Install dependencies
-npm install
+- `src/mcp`: MCP server implementation
+- `src/services`: Core business logic services
+- `src/utils`: Utility functions
+- `src/index.ts`: Main entry point
 
-# Start development server
-npm run dev
+### Web DApp Structure
+
+- `web/src/components`: React components
+- `web/src/hooks`: Custom React hooks
+- `web/src/services`: API services
+- `web/src/pages`: Page components
+
+## Using the MCP Server
+
+The MCP Server exposes several tools that can be used by AI assistants:
+
+- `get-chains`: Get list of supported blockchain networks
+- `get-balance`: Get account balance for an address
+- `read-contract`: Read data from a smart contract
+- `prepare-transaction`: Prepare an unsigned transaction for user approval
+- `get-transaction-status`: Get the current status of a transaction
+
+### Example Tool Usage
+
+```typescript
+// Example of using the get-balance tool
+const result = await callTool("get-balance", {
+  chainId: "1",
+  address: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e"
+});
 ```
-
-## Contributing
-
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 ## License
 
