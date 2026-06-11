@@ -20,7 +20,7 @@
     "start": "node build/index.js",
     "dev": "tsx watch src/index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test src/**/*.test.ts",
+    "test": "node --import tsx --test $(find src -name '*.test.ts')",
     "prepare": "npm run build"
   },
   "keywords": [
