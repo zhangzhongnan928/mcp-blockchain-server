@@ -1,103 +1,68 @@
-# Security Considerations
+# Security
 
-This document outlines the security considerations for the MCP Blockchain Server & DApp system.
+## Core principle: key isolation
 
-## Core Security Principles
+The server's entire purpose is to let an AI assistant act on-chain **without
+ever touching a private key**. This is structural, not a policy:
 
-1. **Private Key Isolation**: Private keys never leave the user's wallet
-2. **Transaction Verification**: Clear UI for reviewing transaction details
-3. **API Authentication**: Secure API key management
-4. **Rate Limiting**: Prevent abuse
-5. **Input Validation**: Sanitize all inputs
-6. **Audit Logging**: Track all operations
-7. **HTTPS Only**: Secure communications
-8. **Content Security Policy**: Prevent XSS
-9. **Regular Security Audits**: Establish process
+1. The server only ever *prepares* transactions. It builds an unsigned request
+   (to, value, data, gas) and stores it.
+2. The user reviews the request in a web page and signs it **in their own
+   wallet** (MetaMask, Rabby, hardware wallet, etc.).
+3. The wallet — not the server — broadcasts the transaction.
+4. The server is told only the public **transaction hash**, which it uses to
+   watch for confirmation.
 
-## Private Key Management
+At no point does the server receive a private key, a seed phrase, or a signed
+transaction payload. There is nothing key-related for it to leak.
 
-The most critical security aspect of this system is that private keys never leave the user's wallet. This is achieved through the following mechanisms:
+## Transaction review
 
-1. Transactions are prepared by the MCP Server without requiring private keys
-2. Users review and sign transactions using their own wallets
-3. Only signed transactions are submitted to the blockchain
-4. The MCP Server never has access to private keys
+Before signing, the page shows the network, recipient, amount, gas limit, and
+raw calldata. Amounts are converted to wei **server-side with ethers** and
+passed through verbatim to the wallet, so what the user sees is what the wallet
+signs. The wallet shows its own confirmation as a second checkpoint.
 
-## Transaction Signing Flow
+## Signing server hardening
 
-The transaction signing flow is designed to ensure that users have full control over their transactions:
+- **Localhost by default.** `HOST` binds to `127.0.0.1`; the server is not
+  exposed to the network unless you deliberately change it.
+- **Strict CSP.** The signing page is served with a nonce-based
+  Content-Security-Policy (`default-src 'none'`, scripted only via a per-request
+  nonce). There are no third-party scripts.
+- **No `innerHTML`.** Transaction data is rendered with `textContent`, so
+  on-chain values cannot inject markup.
+- **Request body limits** and JSON-only parsing on the API.
 
-1. AI assistant requests a transaction through the MCP Server
-2. MCP Server prepares an unsigned transaction with a UUID
-3. MCP Server returns a URL for the user to review the transaction
-4. User opens the URL in their browser
-5. Web DApp prompts the user to connect their wallet
-6. Web DApp displays transaction details for review
-7. User approves and signs the transaction with their wallet
-8. Web DApp submits the signed transaction to the blockchain
+## Input validation
 
-## API Security
+All tool inputs are validated before use:
 
-### Authentication
+- Addresses are checked and checksummed with ethers.
+- Amounts must parse as a valid token value; calldata must be valid hex.
+- Gas limits must be positive integers.
+- A transaction can only be submitted once (state transitions are guarded).
 
-API authentication is implemented using JWT tokens. API keys are used to obtain JWT tokens, which are then used for subsequent API calls.
+## Logging
 
-### Rate Limiting
+Diagnostics are written to **stderr** at the configured `LOG_LEVEL`. This keeps
+the MCP stdout stream clean and avoids logging sensitive request bodies. No
+private keys or signed payloads ever pass through the server, so they cannot
+appear in logs.
 
-API rate limiting is implemented to prevent abuse. Rate limits are applied based on API key.
+## Operational notes
 
-### Input Validation
+- **Default network is a testnet** (Sepolia) to reduce the blast radius of
+  mistakes. Switch to mainnet deliberately via `DEFAULT_CHAIN_ID` or per call.
+- **Public RPCs** are used by default. For production or higher rate limits,
+  set `RPC_URL_<chainId>` or `INFURA_API_KEY` to use your own endpoints.
+- **Hosting the signing page remotely** (setting `HOST`/`PUBLIC_BASE_URL`) means
+  exposing an HTTP service. Put it behind HTTPS and restrict access; the page
+  was designed for local, single-user use.
 
-All API inputs are validated and sanitized to prevent injection attacks.
+## Recommendations for users
 
-## Web Security
-
-### HTTPS
-
-All communications are secured using HTTPS.
-
-### Content Security Policy
-
-A Content Security Policy is implemented to prevent XSS attacks.
-
-### CORS
-
-CORS is configured to restrict access to the API from unauthorized origins.
-
-## Audit Logging
-
-All operations are logged for audit purposes. Logs include:
-
-- API requests and responses
-- Transaction preparation and submission
-- User actions
-- Authentication events
-
-## Regular Security Audits
-
-A process for regular security audits is established. This includes:
-
-- Code reviews
-- Dependency vulnerability scanning
-- Penetration testing
-- Security bug bounty program
-
-## Incident Response
-
-An incident response plan is established to handle security incidents. This includes:
-
-- Incident classification
-- Containment procedures
-- Investigation procedures
-- Communication plan
-- Recovery procedures
-
-## Security Recommendations for Users
-
-1. Always review transaction details carefully before signing
-2. Use a hardware wallet when possible
-3. Keep wallet software up to date
-4. Be cautious of phishing attempts
-5. Do not share API keys or private keys
-6. Enable two-factor authentication where available
-7. Monitor account activity regularly
+1. Always review transaction details — in the page *and* in your wallet — before
+   signing.
+2. Prefer a hardware wallet for anything valuable.
+3. Keep your wallet software up to date and beware of phishing links.

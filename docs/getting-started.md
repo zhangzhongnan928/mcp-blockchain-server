@@ -1,158 +1,92 @@
 # Getting Started
 
-This guide will help you set up and run the MCP Blockchain Server & DApp system.
+This guide gets the MCP Blockchain Server running and connected to an AI
+assistant.
 
 ## Prerequisites
 
-- Node.js (v18 or higher)
-- npm or yarn
-- PostgreSQL
-- Redis (optional, for caching)
+- **Node.js 18 or higher** (nothing else — no database, no Redis, no API keys).
 
-## Installation
-
-### Clone the Repository
+## Install
 
 ```bash
 git clone https://github.com/zhangzhongnan928/mcp-blockchain-server.git
 cd mcp-blockchain-server
-```
-
-### Install Dependencies
-
-```bash
 npm install
-# or
-yarn install
 ```
 
-### Set Up Environment Variables
+`npm install` compiles the TypeScript to `build/` automatically (via the
+`prepare` script). To rebuild later, run `npm run build`.
 
-Create a `.env` file in the root directory with the following variables:
+## Connect to an MCP client
 
-```env
-# Server
-PORT=3000
-NODE_ENV=development
+The server speaks MCP over stdio, so an MCP client launches it as a subprocess.
 
-# Database
-DATABASE_URL=postgres://username:password@localhost:5432/mcp_blockchain
+### Claude Desktop
 
-# Redis (optional)
-REDIS_URL=redis://localhost:6379
+Open **Settings → Developer → Edit Config** and add:
 
-# JWT
-JWT_SECRET=your-jwt-secret
-JWT_EXPIRES_IN=1d
-
-# Blockchain
-INFURA_API_KEY=your-infura-api-key
-ETHERSCAN_API_KEY=your-etherscan-api-key
-
-# Web DApp
-WEB_DAPP_URL=http://localhost:3001
+```json
+{
+  "mcpServers": {
+    "blockchain": {
+      "command": "node",
+      "args": ["/absolute/path/to/mcp-blockchain-server/build/index.js"]
+    }
+  }
+}
 ```
 
-### Set Up Database
+Use an **absolute** path to `build/index.js`. Restart Claude Desktop; the
+blockchain tools appear in the tools menu.
+
+### Passing configuration
+
+All configuration is optional (see the table in the [README](../README.md)).
+To override a default, add an `env` block:
+
+```json
+{
+  "mcpServers": {
+    "blockchain": {
+      "command": "node",
+      "args": ["/absolute/path/to/mcp-blockchain-server/build/index.js"],
+      "env": {
+        "DEFAULT_CHAIN_ID": "1",
+        "ETHERSCAN_API_KEY": "your-key"
+      }
+    }
+  }
+}
+```
+
+## Try it
+
+Ask the assistant:
+
+- *"List the blockchain networks you support."* → `get-chains`
+- *"What's the ETH balance of vitalik.eth on mainnet?"* → `get-balance`
+- *"Send 0.001 test ETH to 0x… on Sepolia."* → `prepare-transaction`, which
+  returns a link. Open it, connect your wallet, review, and sign.
+
+## Running standalone (for development)
 
 ```bash
-npm run db:migrate
-# or
-yarn db:migrate
+npm run dev    # run from source with auto-reload
+npm start      # run the compiled build
+npm test       # run the test suite
 ```
 
-## Running the Server
+When running standalone, the signing web server is available at
+`http://localhost:3000`. The MCP protocol is served on stdio, so you typically
+interact through an MCP client rather than directly.
 
-### Development
+## Troubleshooting
 
-```bash
-npm run dev
-# or
-yarn dev
-```
-
-The server will be available at http://localhost:3000.
-
-### Production
-
-```bash
-npm run build
-npm start
-# or
-yarn build
-yarn start
-```
-
-## Using Docker
-
-### Build the Docker Image
-
-```bash
-docker build -t mcp-blockchain-server .
-```
-
-### Run the Docker Container
-
-```bash
-docker run -p 3000:3000 --env-file .env mcp-blockchain-server
-```
-
-## Web DApp
-
-The Web DApp is located in the `web` directory.
-
-### Install Dependencies
-
-```bash
-cd web
-npm install
-# or
-yarn install
-```
-
-### Set Up Environment Variables
-
-Create a `.env` file in the `web` directory with the following variables:
-
-```env
-NEXT_PUBLIC_API_URL=http://localhost:3000
-NEXT_PUBLIC_INFURA_ID=your-infura-id
-```
-
-### Run the Web DApp
-
-```bash
-npm run dev
-# or
-yarn dev
-```
-
-The Web DApp will be available at http://localhost:3001.
-
-## Testing
-
-### Run Tests
-
-```bash
-npm test
-# or
-yarn test
-```
-
-### Run Lint
-
-```bash
-npm run lint
-# or
-yarn lint
-```
-
-## API Documentation
-
-API documentation is available at http://localhost:3000/api/docs when the server is running in development mode.
-
-## Next Steps
-
-- Review the [Architecture Documentation](architecture.md)
-- Check out the [API Documentation](api.md)
-- Learn about [Security Considerations](security.md)
+- **Tools don't appear in the client.** Check the path in the config is
+  absolute and that `build/index.js` exists (`npm run build`). Check the
+  client's MCP logs — this server writes diagnostics to stderr.
+- **"Port already in use."** Another process holds port 3000. Set `PORT` to a
+  free port. Read-only tools still work even if the signing server can't bind.
+- **A signing link won't open.** Make sure the same server process is still
+  running; the link points at its local HTTP server.

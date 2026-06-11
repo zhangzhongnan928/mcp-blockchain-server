@@ -1,231 +1,92 @@
-# API Documentation
+# Tools & HTTP API
 
-This document outlines the API endpoints and interfaces for the MCP Blockchain Server.
+The server has two surfaces: the **MCP tools** (used by the AI assistant) and a
+small **HTTP API** (used by the signing page). The HTTP API is an internal
+detail of the signing flow — there is no authentication layer because the server
+holds no secrets and binds to localhost by default.
 
-## Authentication
+## MCP tools
 
-All API endpoints require authentication using JWT tokens. To obtain a token, you must first authenticate with your API key.
+### `get-chains`
 
-```http
-POST /api/auth/login
-Content-Type: application/json
-
-{
-  "apiKey": "your-api-key"
-}
-```
-
-Response:
+List supported networks. No arguments.
 
 ```json
-{
-  "token": "your-jwt-token"
-}
+[
+  { "chainId": "1", "name": "Ethereum Mainnet", "currency": "ETH", "testnet": false, "default": false },
+  { "chainId": "11155111", "name": "Sepolia", "currency": "ETH", "testnet": true, "default": true }
+]
 ```
 
-All subsequent requests should include this token in the Authorization header:
+### `get-balance`
 
-```http
-Authorization: Bearer your-jwt-token
-```
-
-## API Endpoints
-
-### Chains
-
-#### List Supported Chains
-
-```http
-GET /api/v1/chains
-```
-
-Response:
+| Argument | Type | Notes |
+| --- | --- | --- |
+| `chainId` | string | e.g. `"1"`. |
+| `address` | string | Address to check. |
 
 ```json
-{
-  "chains": [
-    {
-      "id": "1",
-      "name": "Ethereum Mainnet",
-      "currency": "ETH",
-      "rpcUrl": "https://mainnet.infura.io/v3/..."
-    },
-    {
-      "id": "137",
-      "name": "Polygon",
-      "currency": "MATIC",
-      "rpcUrl": "https://polygon-rpc.com"
-    }
-  ]
-}
+{ "address": "0x…", "chainId": "1", "chainName": "Ethereum Mainnet", "balance": "5.688840446715981478", "symbol": "ETH" }
 ```
 
-#### Get Account Balance
+### `read-contract`
 
-```http
-GET /api/v1/chains/{chainId}/balance/{address}
+| Argument | Type | Notes |
+| --- | --- | --- |
+| `chainId` | string | e.g. `"1"`. |
+| `address` | string | Contract address. |
+| `method` | string | Read-only method name, e.g. `"balanceOf"`. |
+| `args` | array | Optional, in order. |
+| `abi` | string \| array | Optional. Human-readable signature(s) or JSON ABI. If omitted, requires `ETHERSCAN_API_KEY`. |
+
+```jsonc
+// arguments
+{ "chainId": "1", "address": "0xA0b8…eB48", "method": "decimals",
+  "abi": ["function decimals() view returns (uint8)"] }
+// result: 6
 ```
 
-Response:
+BigInt return values are serialized as decimal strings (not converted to ether).
+
+### `prepare-transaction`
+
+| Argument | Type | Notes |
+| --- | --- | --- |
+| `chainId` | string | e.g. `"1"`. |
+| `to` | string | Recipient address. |
+| `value` | string | Optional. Amount of native token, e.g. `"0.01"`. Defaults to `"0"`. |
+| `data` | string | Optional. Calldata hex. Defaults to `"0x"`. |
+| `gasLimit` | string | Optional integer. The wallet estimates if omitted. |
+
+Returns a human-readable message containing the signing URL and the transaction
+id. Nothing is broadcast.
+
+### `get-transaction-status`
+
+| Argument | Type | Notes |
+| --- | --- | --- |
+| `id` | string | The id from `prepare-transaction`. |
 
 ```json
-{
-  "address": "0x...",
-  "balance": "1.234567890",
-  "currency": "ETH"
-}
+{ "id": "…", "status": "CONFIRMED", "chainId": "11155111", "to": "0x…",
+  "from": "0x…", "amount": "0.01", "txHash": "0x…",
+  "createdAt": "…", "updatedAt": "…" }
 ```
 
-#### Read Contract
+Status values: `PENDING` → `SUBMITTED` → `CONFIRMED` | `FAILED`, or `REJECTED`.
 
-```http
-GET /api/v1/chains/{chainId}/contract/{address}/read
-```
+## HTTP API (used by the signing page)
 
-Query Parameters:
+Base URL: `PUBLIC_BASE_URL` (default `http://localhost:3000`).
 
-- `method`: Contract method to call
-- `args`: Comma-separated list of arguments
+| Method & path | Description |
+| --- | --- |
+| `GET /healthz` | Liveness check → `{ "ok": true }`. |
+| `GET /api/chains` | Supported chains (with `wallet_addEthereumChain` params). |
+| `GET /api/tx/:id` | Transaction + chain details, or `404`. |
+| `POST /api/tx/:id/submitted` | Body `{ txHash, from? }`. Marks the tx submitted and starts watching for confirmation. |
+| `POST /api/tx/:id/rejected` | Marks a pending tx rejected. |
+| `GET /tx/:id` | The HTML signing page. |
+| `GET /` | A minimal landing page. |
 
-Response:
-
-```json
-{
-  "result": "..."
-}
-```
-
-### Transactions
-
-#### Prepare Transaction
-
-```http
-POST /api/v1/transaction/prepare
-Content-Type: application/json
-
-{
-  "chainId": "1",
-  "from": "0x...",
-  "to": "0x...",
-  "value": "0.1",
-  "data": "0x...",
-  "gasLimit": "21000"
-}
-```
-
-Response:
-
-```json
-{
-  "uuid": "123e4567-e89b-12d3-a456-426614174000",
-  "url": "https://app.example.com/tx/123e4567-e89b-12d3-a456-426614174000"
-}
-```
-
-#### Get Transaction
-
-```http
-GET /api/v1/transaction/{uuid}
-```
-
-Response:
-
-```json
-{
-  "uuid": "123e4567-e89b-12d3-a456-426614174000",
-  "chainId": "1",
-  "from": "0x...",
-  "to": "0x...",
-  "value": "0.1",
-  "data": "0x...",
-  "gasLimit": "21000",
-  "status": "pending"
-}
-```
-
-#### Submit Transaction
-
-```http
-POST /api/v1/transaction/{uuid}/submit
-Content-Type: application/json
-
-{
-  "signedTransaction": "0x..."
-}
-```
-
-Response:
-
-```json
-{
-  "uuid": "123e4567-e89b-12d3-a456-426614174000",
-  "status": "submitted",
-  "txHash": "0x..."
-}
-```
-
-### User
-
-#### Get User Profile
-
-```http
-GET /api/v1/user/profile
-```
-
-Response:
-
-```json
-{
-  "id": "user-id",
-  "email": "user@example.com",
-  "name": "User Name"
-}
-```
-
-#### Get User Transactions
-
-```http
-GET /api/v1/user/transactions
-```
-
-Response:
-
-```json
-{
-  "transactions": [
-    {
-      "uuid": "123e4567-e89b-12d3-a456-426614174000",
-      "chainId": "1",
-      "to": "0x...",
-      "value": "0.1",
-      "status": "confirmed",
-      "txHash": "0x...",
-      "createdAt": "2023-01-01T00:00:00Z"
-    }
-  ]
-}
-```
-
-## Error Handling
-
-Errors are returned as JSON objects with the following structure:
-
-```json
-{
-  "error": {
-    "code": "error-code",
-    "message": "Error message"
-  }
-}
-```
-
-### Common Error Codes
-
-- `auth/invalid-api-key`: Invalid API key
-- `auth/invalid-token`: Invalid JWT token
-- `auth/expired-token`: Expired JWT token
-- `blockchain/invalid-chain`: Invalid chain ID
-- `blockchain/invalid-address`: Invalid address
-- `blockchain/invalid-transaction`: Invalid transaction
-- `transaction/not-found`: Transaction not found
-- `transaction/already-submitted`: Transaction already submitted
+Errors are returned as `{ "error": "message" }` with an appropriate HTTP status.
