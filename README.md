@@ -102,6 +102,10 @@ put it behind a reverse proxy). When exposed publicly, set `MCP_ALLOWED_HOSTS`
 and/or `MCP_ALLOWED_ORIGINS` to enable DNS-rebinding protection, and front it
 with HTTPS and access control.
 
+To host it as a custom connector (Docker, one-click Render, or a quick tunnel
+for testing) and wire it into Claude's **Add custom connector** dialog, see the
+**[deployment guide](docs/deployment.md)**.
+
 ## Tools
 
 | Tool | Purpose |

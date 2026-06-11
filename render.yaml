@@ -1,0 +1,23 @@
+# One-click deploy to Render (https://render.com).
+#
+# In Render: New > Blueprint > point at this repo. Render builds the Dockerfile
+# and runs the server in HTTP mode. The public URL it assigns is exposed to the
+# app as RENDER_EXTERNAL_URL, which the server uses to build signing links — so
+# no manual PUBLIC_BASE_URL is needed.
+#
+# Your MCP / connector URL is then:  https://<your-service>.onrender.com/mcp
+services:
+  - type: web
+    name: mcp-blockchain-server
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /
+    envVars:
+      - key: MCP_TRANSPORT
+        value: http
+      - key: HOST
+        value: 0.0.0.0
+      # Optional: lock the MCP endpoint to your domain (DNS-rebind protection).
+      # - key: MCP_ALLOWED_HOSTS
+      #   value: your-service.onrender.com

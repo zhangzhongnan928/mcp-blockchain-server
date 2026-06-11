@@ -1,0 +1,12 @@
+node_modules
+build
+.git
+.github
+*.tgz
+.env
+.env.*
+npm-debug.log*
+docs
+*.md
+.vscode
+.idea
