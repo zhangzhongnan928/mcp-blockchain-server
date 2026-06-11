@@ -1,182 +1,155 @@
-# MCP Blockchain Server & DApp
+# MCP Blockchain Server
 
-A secure system enabling AI assistants to interact with blockchain smart contracts while ensuring users maintain complete control over their private keys and transaction signing.
+An [MCP](https://modelcontextprotocol.io) server that lets AI assistants **read
+blockchain data** and **prepare transactions** — while the user keeps full
+custody of their keys and signs every transaction in their own wallet.
 
-## Overview
+It runs as a **single, self-contained process**. No database, no Redis, no API
+keys, no separate frontend to build. Point your MCP client at it and go.
 
-This project addresses a key challenge in AI-blockchain integration: allowing AI assistants to read blockchain data and prepare transactions while ensuring users maintain exclusive control over transaction signing and private keys.
+```
+┌──────────────┐   MCP (stdio)   ┌─────────────────────┐   RPC    ┌────────────┐
+│ AI assistant │ ──────────────► │  mcp-blockchain     │ ───────► │ Blockchain │
+│ (Claude …)   │ ◄────────────── │  server             │ ◄─────── │  (EVM)     │
+└──────────────┘                 │   + signing web page │          └────────────┘
+                                 └─────────┬───────────┘
+                                           │ opens link, signs in wallet
+                                           ▼
+                                     ┌───────────┐
+                                     │   User    │  (MetaMask / Rabby / …)
+                                     └───────────┘
+```
 
-The system consists of:
+## Why this design
 
-1. **MCP Server**: A Model Context Protocol server that exposes blockchain operations as tools that can be used by AI assistants
-2. **Web DApp**: A React application that provides a user interface for wallet connection and transaction signing
-3. **Database**: PostgreSQL database for storing users, API keys, and transaction records
-4. **Caching**: Redis for caching frequently accessed data
+The hard problem in AI + blockchain is letting an assistant *act* without ever
+touching private keys. This server solves it by splitting the work:
 
-## Features
+- **Reads** (balances, contract state) happen server-side and return directly to
+  the assistant.
+- **Writes** are only ever *prepared* server-side. The server hands back a URL;
+  the user opens it, reviews the details, and **signs in their own wallet**. The
+  wallet broadcasts the transaction. The server only ever learns the resulting
+  transaction hash. **Private keys never reach the server.**
 
-### MCP Server Features
+## Quick start
 
-- **Blockchain Data Access**: Read balances, contract state, and other on-chain data
-- **Transaction Preparation**: Create unsigned transactions for user approval
-- **Multi-Chain Support**: Works with Ethereum, Polygon, and other EVM-compatible chains
-- **Smart Contract Interaction**: Read from verified smart contracts on supported networks
-- **Security-First Design**: Private keys never leave the user's wallet
+Requirements: **Node.js 18+**. That's it.
 
-### Web DApp Features
-
-- **Wallet Integration**: Connect with MetaMask and other Web3 wallets
-- **Transaction Review**: Clear UI for reviewing transaction details before signing
-- **Transaction Signing**: Sign transactions with connected wallet
-- **Transaction Tracking**: Monitor status of submitted transactions
-- **Mobile Compatibility**: Responsive design works on all devices
-
-## Security Principles
-
-1. **Private Key Isolation**: Keys never leave the user's wallet
-2. **Transaction Verification**: Clear UI for reviewing transaction details
-3. **API Authentication**: Secure API key management
-4. **Rate Limiting**: Prevent abuse
-5. **Input Validation**: Sanitize all inputs
-6. **Audit Logging**: Track all operations
-7. **HTTPS Only**: Secure communications
-8. **Content Security Policy**: Prevent XSS
-
-## Transaction Flow
-
-1. AI assistant requests transaction through MCP Server
-2. MCP Server prepares unsigned transaction with UUID
-3. MCP Server returns transaction URL to AI assistant
-4. AI assistant provides URL to user
-5. User opens URL in browser
-6. User connects wallet and reviews transaction details
-7. User approves and signs transaction with their wallet
-8. Web DApp submits signed transaction to blockchain
-9. Transaction status is updated and tracked
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js (v18 or higher)
-- npm or yarn
-- PostgreSQL
-- Redis (optional, for caching)
-- Infura API key (for blockchain access)
-- Etherscan API key (for contract ABIs)
-
-### Installation
-
-1. Clone the repository:
 ```bash
 git clone https://github.com/zhangzhongnan928/mcp-blockchain-server.git
 cd mcp-blockchain-server
+npm install      # builds automatically
 ```
 
-2. Install dependencies:
-```bash
-npm install
-# or
-yarn install
+Then register it with your MCP client. For **Claude Desktop**, add this to
+`claude_desktop_config.json` (Settings → Developer → Edit Config):
+
+```json
+{
+  "mcpServers": {
+    "blockchain": {
+      "command": "node",
+      "args": ["/absolute/path/to/mcp-blockchain-server/build/index.js"]
+    }
+  }
+}
 ```
 
-3. Set up environment variables:
-Create a `.env` file in the root directory (or copy from `.env.example`):
-```bash
-cp .env.example .env
-# Edit .env with your configurations
+Restart the client. You can now ask things like *"What's the ETH balance of
+vitalik.eth?"* or *"Send 0.01 test ETH to 0x… on Sepolia."* For a send, the
+assistant returns a link — open it, review, and sign in your wallet.
+
+No configuration is required: the server ships with free public RPC endpoints
+and defaults to the **Sepolia testnet**.
+
+## Tools
+
+| Tool | Purpose |
+| --- | --- |
+| `get-chains` | List supported networks and their chain ids. |
+| `get-balance` | Native-token balance for an address on a chain. |
+| `read-contract` | Call a read-only contract method (pass an `abi` or set `ETHERSCAN_API_KEY`). |
+| `prepare-transaction` | Create an unsigned transaction and return a signing URL. |
+| `get-transaction-status` | Track a prepared transaction by id. |
+
+`read-contract` is zero-config when you pass a human-readable ABI:
+
+```jsonc
+{
+  "chainId": "1",
+  "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+  "method": "balanceOf",
+  "args": ["0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"],
+  "abi": ["function balanceOf(address) view returns (uint256)"]
+}
 ```
 
-4. Set up the database:
-```bash
-# For detailed instructions, see the Database Setup Guide
-# docs/database-setup.md
+## Signing flow
 
-# Create the PostgreSQL database
-createdb mcp_blockchain
+1. The assistant calls `prepare-transaction`. The server stores it and returns
+   `http://localhost:3000/tx/<id>`.
+2. The user opens the link. The page shows the network, recipient, amount, and
+   calldata.
+3. The user connects their wallet and clicks **Approve & Sign**. The wallet
+   signs *and* broadcasts (`eth_sendTransaction`).
+4. The page reports the transaction hash back to the server, which watches for
+   on-chain confirmation.
+5. The assistant polls `get-transaction-status` until it is `CONFIRMED`.
 
-# Run database migrations
-npm run db:migrate
-# or
-yarn db:migrate
-```
+The signing page is plain HTML + vanilla JS served by the same process — there
+is nothing extra to build or deploy.
 
-See [Database Setup Guide](docs/database-setup.md) for detailed instructions on installing and configuring PostgreSQL.
+## Configuration
 
-5. Start the server:
-```bash
-npm run dev
-# or
-yarn dev
-```
+Everything is optional. Copy `.env.example` to `.env` to override defaults.
 
-### Using Docker Compose
+| Variable | Default | Description |
+| --- | --- | --- |
+| `PORT` | `3000` | Port for the signing web server. |
+| `HOST` | `127.0.0.1` | Interface to bind (localhost only by default). |
+| `PUBLIC_BASE_URL` | `http://localhost:<PORT>` | Base URL used in signing links (set when hosting remotely). |
+| `DEFAULT_CHAIN_ID` | `11155111` | Default chain (Sepolia testnet). |
+| `LOG_LEVEL` | `info` | `error` \| `warn` \| `info` \| `debug` (logs go to stderr). |
+| `MCP_DATA_DIR` | `~/.mcp-blockchain` | Where pending transactions are stored. |
+| `RPC_URL_<chainId>` | built-in public RPC | Override the RPC for a chain, e.g. `RPC_URL_1=https://…`. |
+| `INFURA_API_KEY` | — | If set, upgrades default RPCs to Infura. |
+| `ETHERSCAN_API_KEY` | — | If set, `read-contract` can auto-fetch verified ABIs. |
 
-For a quick start using Docker:
+## Supported chains
 
-```bash
-# Create .env file with required environment variables
-cp .env.example .env
-# Edit .env with your configurations
-
-# Start the services
-docker-compose up -d
-```
-
-This will start:
-- PostgreSQL database
-- Redis cache
-- MCP Server
-- Web DApp
+Ethereum (`1`), Sepolia (`11155111`), Polygon (`137`), Polygon Amoy (`80002`),
+Base (`8453`), Base Sepolia (`84532`), Arbitrum One (`42161`), OP Mainnet
+(`10`). Each has a built-in public RPC; override any with `RPC_URL_<chainId>`.
 
 ## Development
 
-### Server Structure
-
-- `src/mcp`: MCP server implementation
-- `src/services`: Core business logic services
-- `src/utils`: Utility functions
-- `src/index.ts`: Main entry point
-
-### Web DApp Structure
-
-- `web/src/components`: React components
-- `web/src/hooks`: Custom React hooks
-- `web/src/services`: API services
-- `web/src/pages`: Page components
-
-## Using the MCP Server
-
-The MCP Server exposes several tools that can be used by AI assistants:
-
-- `get-chains`: Get list of supported blockchain networks
-- `get-balance`: Get account balance for an address
-- `read-contract`: Read data from a smart contract
-- `prepare-transaction`: Prepare an unsigned transaction for user approval
-- `get-transaction-status`: Get the current status of a transaction
-
-### Example Tool Usage
-
-```typescript
-// Example of using the get-balance tool
-const result = await callTool("get-balance", {
-  chainId: "1",
-  address: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e"
-});
-```
-
-## Troubleshooting
-
-If you encounter issues with dependencies:
-
 ```bash
-# MCP SDK issue - install directly from GitHub
-npm uninstall @modelcontextprotocol/sdk
-npm install modelcontextprotocol/typescript-sdk
+npm run dev        # run from source with auto-reload (tsx)
+npm run build      # compile TypeScript to build/
+npm start          # run the compiled server
+npm test           # run the test suite (node:test)
+npm run typecheck  # type-check without emitting
 ```
 
-For database connection issues, see the [Database Setup Guide](docs/database-setup.md).
+## Security
+
+- **Private keys never reach the server.** It only prepares transactions; the
+  user's wallet signs and broadcasts them.
+- The signing server binds to **localhost** by default and sets a strict,
+  nonce-based Content-Security-Policy on the signing page.
+- All tool inputs (addresses, amounts, calldata) are validated before use.
+- Logs are written to **stderr** so they never corrupt the MCP stdio stream.
+
+See [docs/security.md](docs/security.md) for details.
+
+## Documentation
+
+- [Getting Started](docs/getting-started.md)
+- [Architecture](docs/architecture.md)
+- [Tools & HTTP API](docs/api.md)
+- [Security](docs/security.md)
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT — see [LICENSE](LICENSE).

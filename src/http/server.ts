@@ -1,0 +1,145 @@
+import { randomBytes } from 'node:crypto';
+import http from 'node:http';
+import express, { type Request, type Response, type NextFunction } from 'express';
+import { config } from '../config.js';
+import { getChains, getChainById, getRpcUrl, type Chain } from '../chains.js';
+import { logger } from '../logger.js';
+import {
+  getTransactionById,
+  markRejected,
+  markSubmitted,
+} from '../services/transactionService.js';
+import { renderIndexPage, renderSigningPage } from './signingPage.js';
+
+/** Shapes a chain for the browser, including MetaMask `wallet_addEthereumChain` params. */
+function chainView(chain: Chain) {
+  const chainIdHex = '0x' + parseInt(chain.id, 10).toString(16);
+  return {
+    chainId: chain.id,
+    chainIdHex,
+    name: chain.name,
+    currency: chain.nativeCurrency.symbol,
+    explorerUrl: chain.explorerUrl,
+    testnet: chain.testnet,
+    addParams: {
+      chainId: chainIdHex,
+      chainName: chain.name,
+      nativeCurrency: chain.nativeCurrency,
+      rpcUrls: [getRpcUrl(chain)],
+      blockExplorerUrls: [chain.explorerUrl],
+    },
+  };
+}
+
+function txView(id: string) {
+  const tx = getTransactionById(id);
+  if (!tx) return undefined;
+  return {
+    id: tx.id,
+    chainId: tx.chainId,
+    to: tx.to,
+    from: tx.from,
+    valueDisplay: tx.valueDisplay,
+    valueWeiHex: tx.valueWeiHex,
+    data: tx.data,
+    gasLimitHex: tx.gasLimitHex,
+    status: tx.status,
+    txHash: tx.txHash,
+    error: tx.error,
+  };
+}
+
+export function createApp(): express.Express {
+  const app = express();
+  app.disable('x-powered-by');
+  app.use(express.json({ limit: '256kb' }));
+
+  // Baseline security headers for every response.
+  app.use((_req: Request, res: Response, next: NextFunction) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    next();
+  });
+
+  app.get('/healthz', (_req, res) => res.json({ ok: true }));
+
+  app.get('/', (_req, res) => {
+    res.type('html').send(renderIndexPage());
+  });
+
+  app.get('/api/chains', (_req, res) => {
+    res.json({ chains: getChains().map(chainView) });
+  });
+
+  app.get('/api/tx/:id', (req, res) => {
+    const tx = txView(req.params.id);
+    if (!tx) return res.status(404).json({ error: 'Transaction not found.' });
+    const chain = getChainById(tx.chainId);
+    if (!chain) return res.status(500).json({ error: 'Unknown chain for transaction.' });
+    res.json({ transaction: tx, chain: chainView(chain) });
+  });
+
+  app.post('/api/tx/:id/submitted', async (req, res) => {
+    try {
+      const { txHash, from } = req.body ?? {};
+      if (typeof txHash !== 'string') {
+        return res.status(400).json({ error: 'txHash is required.' });
+      }
+      const updated = await markSubmitted(req.params.id, txHash, typeof from === 'string' ? from : undefined);
+      res.json({ status: updated.status, txHash: updated.txHash });
+    } catch (error) {
+      res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  app.post('/api/tx/:id/rejected', async (req, res) => {
+    try {
+      const updated = await markRejected(req.params.id);
+      res.json({ status: updated.status });
+    } catch (error) {
+      res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  // The signing page. A per-request nonce locks down the single inline script.
+  app.get('/tx/:id', (_req, res) => {
+    const nonce = randomBytes(16).toString('base64');
+    res.setHeader(
+      'Content-Security-Policy',
+      [
+        "default-src 'none'",
+        `script-src 'nonce-${nonce}'`,
+        "style-src 'unsafe-inline'",
+        "connect-src 'self'",
+        "img-src 'self' data:",
+        "base-uri 'none'",
+        "frame-ancestors 'none'",
+      ].join('; '),
+    );
+    res.type('html').send(renderSigningPage(nonce));
+  });
+
+  app.use((_req, res) => res.status(404).json({ error: 'Not found.' }));
+
+  return app;
+}
+
+/**
+ * Starts the embedded HTTP server. Resolves with the listening server, or
+ * rejects on bind failure (e.g. the port is already in use) so the caller can
+ * decide how to proceed without killing the MCP connection.
+ */
+export function startHttpServer(): Promise<http.Server> {
+  const app = createApp();
+  const server = http.createServer(app);
+
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(config.port, config.host, () => {
+      server.removeListener('error', reject);
+      logger.info(`Signing server listening at ${config.publicBaseUrl}`);
+      resolve(server);
+    });
+  });
+}

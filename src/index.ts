@@ -1,55 +1,52 @@
-import dotenv from 'dotenv';
-import { PrismaClient } from '@prisma/client';
+#!/usr/bin/env node
+import type http from 'node:http';
+import { config } from './config.js';
+import { logger } from './logger.js';
+import { initStore } from './store.js';
+import { startHttpServer } from './http/server.js';
 import { startMcpServer } from './mcp/server.js';
-import { initializeChains } from './services/chainService.js';
-import { logger } from './utils/logger.js';
-import { closeAllProviders } from './utils/blockchain.js';
+import { closeAllProviders } from './blockchain.js';
 
-// Load environment variables
-dotenv.config();
+async function main(): Promise<void> {
+  logger.info('Starting MCP Blockchain Server v0.2.0');
 
-// Initialize Prisma client
-const prisma = new PrismaClient();
+  // Load any persisted (pending) transactions.
+  await initStore();
 
-// Main function
-async function main() {
+  // Start the embedded signing server. A bind failure (e.g. port in use) is
+  // non-fatal: the read-only MCP tools keep working, only signing links break.
+  let httpServer: http.Server | undefined;
   try {
-    logger.info('Starting MCP Blockchain Server');
-    
-    // Connect to database
-    await prisma.$connect();
-    logger.info('Connected to database');
-    
-    // Initialize chains
-    await initializeChains();
-    
-    // Start MCP server
-    const server = await startMcpServer();
-    
-    // Handle shutdown
-    const shutdown = async () => {
-      logger.info('Shutting down...');
-      
-      // Close Prisma connection
-      await prisma.$disconnect();
-      
-      // Close blockchain providers
-      closeAllProviders();
-      
-      logger.info('Graceful shutdown complete');
-      process.exit(0);
-    };
-    
-    // Catch termination signals
-    process.on('SIGINT', shutdown);
-    process.on('SIGTERM', shutdown);
-    
-    logger.info('MCP Blockchain Server started successfully');
+    httpServer = await startHttpServer();
   } catch (error) {
-    logger.error('Failed to start server:', error);
-    process.exit(1);
+    logger.warn(
+      `Could not start signing server on ${config.host}:${config.port} ` +
+        `(${error instanceof Error ? error.message : String(error)}). ` +
+        'Read-only tools still work; set PORT to a free port to enable signing links.',
+    );
   }
+
+  // Connect the MCP server over stdio (this is what the AI client talks to).
+  await startMcpServer();
+
+  let shuttingDown = false;
+  const shutdown = async (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    logger.info(`Received ${signal}, shutting down…`);
+    closeAllProviders();
+    if (httpServer) await new Promise<void>((resolve) => httpServer!.close(() => resolve()));
+    logger.info('Shutdown complete');
+    process.exit(0);
+  };
+
+  process.on('SIGINT', () => void shutdown('SIGINT'));
+  process.on('SIGTERM', () => void shutdown('SIGTERM'));
+
+  logger.info('MCP Blockchain Server is ready');
 }
 
-// Start the application
-main();
+main().catch((error) => {
+  logger.error('Fatal error during startup', error);
+  process.exit(1);
+});

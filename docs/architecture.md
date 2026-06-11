@@ -1,98 +1,77 @@
-# Architecture Overview
+# Architecture
 
-This document outlines the high-level architecture of the MCP Blockchain Server & DApp system.
+The server is a **single Node.js process** that exposes two interfaces:
 
-## System Components
+1. An **MCP server over stdio** — what the AI assistant talks to.
+2. An **embedded HTTP server** — serves the transaction signing page and the
+   small API that page uses.
 
-### MCP Server (Cloud)
-
-The MCP Server is a Node.js application that handles blockchain read operations and transaction preparation. It exposes an API that AI assistants can use to interact with blockchain data and prepare transactions for user approval.
-
-**Key Responsibilities:**
-
-- Reading blockchain data (balances, contract state, etc.)
-- Preparing unsigned transactions
-- Generating unique transaction IDs
-- Managing API authentication
-- Maintaining transaction state
-
-### Web DApp
-
-The Web DApp is a React application that provides a user interface for wallet connection and transaction approval. It connects to the MCP Server API and allows users to review and sign transactions using their own wallets.
-
-**Key Responsibilities:**
-
-- Wallet connection (via Web3Modal)
-- Transaction review and approval
-- Transaction signing
-- Transaction submission
-- User management
-
-### AI Integration
-
-The AI Integration layer provides an API and SDK for AI assistants to use the MCP Server. It allows AI assistants to read blockchain data and prepare transactions for user approval.
-
-**Key Responsibilities:**
-
-- API authentication
-- API rate limiting
-- Standardized blockchain operations
-- Transaction preparation
-
-## Transaction Flow
-
-### Read Operations
-
-1. AI queries MCP Server API directly
-2. MCP Server retrieves blockchain data
-3. MCP Server returns data to AI
-
-### Write Operations
-
-1. AI requests transaction through MCP Server
-2. MCP Server prepares unsigned transaction with UUID
-3. MCP Server returns transaction URL to AI
-4. AI provides URL to user
-5. User opens URL in browser
-6. Web DApp prompts user to connect wallet
-7. Web DApp displays transaction details for review
-8. User approves and signs with their wallet
-9. Web DApp submits signed transaction to blockchain
-10. Transaction status is updated and recorded
-
-## Data Flow Diagram
+There is no database, cache, message queue, or separate frontend.
 
 ```
-┌────────────┐      ┌───────────────┐      ┌──────────────┐
-│            │      │               │      │              │
-│     AI     │◄────►│   MCP Server  │◄────►│   Web DApp   │
-│ Assistant  │      │               │      │              │
-└────────────┘      └───────────────┘      └──────────┬───┘
-                                                      │
-                                                      ▼
-                                            ┌──────────────┐
-                                            │              │
-                                            │  Blockchain  │
-                                            │              │
-                                            └──────────────┘
+            stdio (MCP)                         HTTP (localhost)
+AI client ───────────────► mcp/server.ts        http/server.ts ◄─── User's browser
+                                │                      │                 │
+                                ▼                      ▼                 ▼
+                          services/*  ◄──────────────────────────  signing page
+                                │  (prepare / read / balance)     (eth_sendTransaction)
+                                ▼
+                         blockchain.ts ──► ethers JsonRpcProvider ──► EVM RPC
+                                │
+                                ▼
+                            store.ts  ──► ~/.mcp-blockchain/transactions.json
 ```
 
-## Security Considerations
+## Modules
 
-See [Security](security.md) document for detailed security considerations.
+| File | Responsibility |
+| --- | --- |
+| `src/index.ts` | Entry point. Loads the store, starts the HTTP and MCP servers, handles shutdown. |
+| `src/config.ts` | Reads environment variables into a validated config object (with defaults). |
+| `src/logger.ts` | Minimal logger that writes to **stderr only** (stdout is reserved for MCP). |
+| `src/chains.ts` | Built-in registry of EVM chains with public RPC endpoints. |
+| `src/blockchain.ts` | Cached ethers providers; address helpers. |
+| `src/store.ts` | File-backed JSON store for pending transactions. |
+| `src/services/*` | Core logic: balances, contract reads, transaction lifecycle. |
+| `src/mcp/server.ts` | Registers the MCP tools and connects the stdio transport. |
+| `src/http/server.ts` | Express app: signing API + serves the signing page. |
+| `src/http/signingPage.ts` | The self-contained HTML/JS signing page. |
 
-## Technology Stack
+## Read flow
 
-### MCP Server
+1. The assistant calls `get-balance` / `read-contract`.
+2. The service resolves a provider from `blockchain.ts` and queries the chain
+   via ethers.
+3. The result is returned to the assistant. Nothing is stored.
 
-- Node.js with Express
-- PostgreSQL for users, Redis for caching
-- ethers.js or Web3.js for blockchain integration
-- JWT for API authentication
+## Write (signing) flow
 
-### Web DApp
+1. The assistant calls `prepare-transaction`. The service validates inputs,
+   converts the amount to wei, and writes a `PENDING` record to the store. It
+   returns a `/tx/<id>` URL.
+2. The user opens the URL. The signing page fetches the transaction and chain
+   details from `GET /api/tx/:id`.
+3. The user connects a wallet and approves. The page calls
+   `eth_sendTransaction`; the **wallet signs and broadcasts**.
+4. The page reports the hash to `POST /api/tx/:id/submitted`. The service marks
+   the record `SUBMITTED` and watches for confirmation in the background,
+   updating it to `CONFIRMED` or `FAILED`.
+5. The assistant polls `get-transaction-status` for the outcome.
 
-- React with TypeScript
-- Web3Modal or Rainbow Kit for wallet integration
-- Redux or Context API for state management
-- Tailwind CSS for styling
+The key property: the server prepares and tracks transactions but **never sees a
+private key or a signed payload** — only the public transaction hash.
+
+## State & persistence
+
+Pending transactions live in memory and are mirrored to a single JSON file
+(`MCP_DATA_DIR/transactions.json`, default `~/.mcp-blockchain`). Writes are
+serialized and atomic (temp file + rename), so records survive restarts without
+a database.
+
+## Technology
+
+- Node.js 18+ with TypeScript (ES modules)
+- [`@modelcontextprotocol/sdk`](https://github.com/modelcontextprotocol/typescript-sdk)
+- [ethers v6](https://docs.ethers.org/v6/) for EVM access
+- Express for the embedded HTTP server
+- Zod for tool input schemas
