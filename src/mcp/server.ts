@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { config, VERSION } from '../config.js';
+import { getPublicBaseUrl } from '../runtime.js';
 import { getChains } from '../chains.js';
 import { getBalance } from '../services/accountService.js';
 import { readContract } from '../services/contractService.js';
@@ -118,7 +119,7 @@ function registerTools(server: McpServer): void {
     async ({ chainId, to, value, data, gasLimit }) => {
       try {
         const tx = await prepareTransaction({ chainId, to, value, data, gasLimit });
-        const url = `${config.publicBaseUrl}/tx/${tx.id}`;
+        const url = `${getPublicBaseUrl()}/tx/${tx.id}`;
         return text(
           [
             'Transaction prepared. The user must open this URL to review and sign it in their wallet:',

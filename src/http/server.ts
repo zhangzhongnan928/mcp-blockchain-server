@@ -4,6 +4,7 @@ import express, { type Request, type Response, type NextFunction } from 'express
 import { config } from '../config.js';
 import { getChains, getChainById, getRpcUrl, type Chain } from '../chains.js';
 import { logger } from '../logger.js';
+import { getPublicBaseUrl, setBoundPort } from '../runtime.js';
 import {
   getTransactionById,
   markRejected,
@@ -131,19 +132,50 @@ export function createApp(): express.Express {
 
 /**
  * Starts the embedded HTTP server. Resolves with the listening server, or
- * rejects on bind failure (e.g. the port is already in use) so the caller can
- * decide how to proceed without killing the MCP connection.
+ * rejects on bind failure so the caller can decide how to proceed without
+ * killing the MCP connection.
+ *
+ * In local (stdio) mode, when the user hasn't pinned a base URL, a busy port is
+ * not fatal: we probe the next ports and derive the signing URL from whatever
+ * we actually bind. This avoids handing out a `localhost:3000` link that lands
+ * on some other dev server. In http mode (or when PUBLIC_BASE_URL is pinned) we
+ * bind the exact port and fail on conflict, so deployments stay deterministic.
  */
+const MAX_PORT_PROBES = 20;
+
 export function startHttpServer(): Promise<http.Server> {
   const app = createApp();
   const server = http.createServer(app);
 
+  // Only auto-shift when we're free to derive the URL ourselves.
+  const allowShift = config.transport === 'stdio' && !config.explicitPublicBaseUrl;
+
   return new Promise((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(config.port, config.host, () => {
-      server.removeListener('error', reject);
-      logger.info(`Signing server listening at ${config.publicBaseUrl}`);
-      resolve(server);
-    });
+    let probes = 0;
+
+    const tryListen = (candidate: number): void => {
+      const onError = (err: NodeJS.ErrnoException) => {
+        if (err.code === 'EADDRINUSE' && allowShift && probes < MAX_PORT_PROBES) {
+          probes += 1;
+          const next = candidate + 1;
+          logger.warn(`Port ${candidate} is in use, trying ${next}…`);
+          tryListen(next);
+          return;
+        }
+        reject(err);
+      };
+
+      server.once('error', onError);
+      server.listen(candidate, config.host, () => {
+        server.removeListener('error', onError);
+        const address = server.address();
+        const actualPort = typeof address === 'object' && address ? address.port : candidate;
+        setBoundPort(actualPort);
+        logger.info(`Signing server listening at ${getPublicBaseUrl()}`);
+        resolve(server);
+      });
+    };
+
+    tryListen(config.port);
   });
 }

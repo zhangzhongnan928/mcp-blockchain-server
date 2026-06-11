@@ -111,7 +111,10 @@ interact through an MCP client rather than directly.
 - **Tools don't appear in the client.** Check the path in the config is
   absolute and that `build/index.js` exists (`npm run build`). Check the
   client's MCP logs — this server writes diagnostics to stderr.
-- **"Port already in use."** Another process holds port 3000. Set `PORT` to a
-  free port. Read-only tools still work even if the signing server can't bind.
+- **Signing link shows a 404 / wrong app.** Something else (often a Next.js or
+  other dev server) is on the signing port. In local mode the server now
+  auto-shifts to the next free port and builds the link from it, so this should
+  resolve itself — but if you pinned `PORT`/`PUBLIC_BASE_URL`, make sure that
+  port is actually free (or unset them to let it auto-pick).
 - **A signing link won't open.** Make sure the same server process is still
   running; the link points at its local HTTP server.

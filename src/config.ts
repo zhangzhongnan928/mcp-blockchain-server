@@ -17,7 +17,7 @@ function parsePort(value: string | undefined, fallback: number): number {
 }
 
 /** Current server version (single source of truth). */
-export const VERSION = '0.3.0';
+export const VERSION = '0.4.0';
 
 function parseList(value: string | undefined): string[] {
   return (value || '')
@@ -28,17 +28,21 @@ function parseList(value: string | undefined): string[] {
 
 const port = parsePort(process.env.PORT, 3000);
 
-// Where the signing page is reachable. Defaults to localhost; override
-// PUBLIC_BASE_URL when hosting the signing page behind a domain/tunnel.
-const publicBaseUrl = (process.env.PUBLIC_BASE_URL || `http://localhost:${port}`).replace(/\/$/, '');
+// An explicit public base URL, if the user pinned one (or the platform provides
+// one). When unset, the URL is derived at runtime from the port we actually
+// bind — see runtime.ts — so signing links always point at *this* server.
+const explicitPublicBaseUrl =
+  (process.env.PUBLIC_BASE_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/$/, '') || undefined;
 
 export const config = {
-  /** Port the embedded HTTP (signing) server listens on. */
+  /** Desired port for the embedded HTTP (signing) server. */
   port,
+  /** Whether PORT was explicitly provided (affects auto-port-selection). */
+  portExplicitlySet: !!process.env.PORT,
   /** Interface to bind. Defaults to localhost only for safety. */
   host: process.env.HOST || '127.0.0.1',
-  /** Base URL used to build transaction links handed to the user. */
-  publicBaseUrl,
+  /** Explicit base URL for transaction links, or undefined to derive from the bound port. */
+  explicitPublicBaseUrl,
   /** Log verbosity: error | warn | info | debug. */
   logLevel: (process.env.LOG_LEVEL || 'info').toLowerCase(),
   /** Default chain used when a tool call omits chainId. */

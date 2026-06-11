@@ -2,6 +2,7 @@
 import type http from 'node:http';
 import { config, VERSION } from './config.js';
 import { logger } from './logger.js';
+import { getPublicBaseUrl } from './runtime.js';
 import { initStore } from './store.js';
 import { startHttpServer } from './http/server.js';
 import { startStdioServer } from './mcp/server.js';
@@ -35,7 +36,7 @@ async function main(): Promise<void> {
   if (config.transport === 'stdio') {
     await startStdioServer();
   } else {
-    logger.info(`MCP available over HTTP at ${config.publicBaseUrl}/mcp`);
+    logger.info(`MCP available over HTTP at ${getPublicBaseUrl()}/mcp`);
   }
 
   let shuttingDown = false;
