@@ -34,23 +34,17 @@ touching private keys. This server solves it by splitting the work:
 
 ## Quick start
 
-Requirements: **Node.js 18+**. That's it.
+Requirements: **Node.js 18+**. No clone, no build, no API keys.
 
-```bash
-git clone https://github.com/zhangzhongnan928/mcp-blockchain-server.git
-cd mcp-blockchain-server
-npm install      # builds automatically
-```
-
-Then register it with your MCP client. For **Claude Desktop**, add this to
-`claude_desktop_config.json` (Settings → Developer → Edit Config):
+Add the server to any MCP client that launches stdio servers. For **Claude
+Desktop**, open Settings → Developer → Edit Config and add:
 
 ```json
 {
   "mcpServers": {
     "blockchain": {
-      "command": "node",
-      "args": ["/absolute/path/to/mcp-blockchain-server/build/index.js"]
+      "command": "npx",
+      "args": ["-y", "mcp-blockchain-server"]
     }
   }
 }
@@ -62,6 +56,51 @@ assistant returns a link — open it, review, and sign in your wallet.
 
 No configuration is required: the server ships with free public RPC endpoints
 and defaults to the **Sepolia testnet**.
+
+### Use it in other clients
+
+The same `npx` command works anywhere that runs an MCP stdio server — the config
+shape is identical across clients:
+
+```json
+{ "command": "npx", "args": ["-y", "mcp-blockchain-server"] }
+```
+
+This is the block to drop into **Cursor** (`.cursor/mcp.json`), **Cline**,
+**Windsurf**, **VS Code** (`.vscode/mcp.json`), and others. To pass options, add
+an `"env"` block (see [Configuration](#configuration)).
+
+### Run from source (development)
+
+```bash
+git clone https://github.com/zhangzhongnan928/mcp-blockchain-server.git
+cd mcp-blockchain-server
+npm install      # installs and builds (via the prepare script)
+```
+
+Then point the client at the build instead of npx:
+
+```json
+{ "command": "node", "args": ["/absolute/path/to/mcp-blockchain-server/build/index.js"] }
+```
+
+### Remote / web clients (HTTP transport)
+
+For MCP clients that connect over HTTP instead of spawning a local process, run
+the server in HTTP mode. It then serves the MCP endpoint **and** the signing
+page on one port:
+
+```bash
+MCP_TRANSPORT=http PUBLIC_BASE_URL=https://your-host npx -y mcp-blockchain-server
+```
+
+- MCP endpoint (Streamable HTTP): `https://your-host/mcp`
+- Signing links: `https://your-host/tx/<id>`
+
+Bind a public interface with `HOST=0.0.0.0` (or keep the default `127.0.0.1` and
+put it behind a reverse proxy). When exposed publicly, set `MCP_ALLOWED_HOSTS`
+and/or `MCP_ALLOWED_ORIGINS` to enable DNS-rebinding protection, and front it
+with HTTPS and access control.
 
 ## Tools
 
@@ -106,15 +145,18 @@ Everything is optional. Copy `.env.example` to `.env` to override defaults.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `PORT` | `3000` | Port for the signing web server. |
-| `HOST` | `127.0.0.1` | Interface to bind (localhost only by default). |
-| `PUBLIC_BASE_URL` | `http://localhost:<PORT>` | Base URL used in signing links (set when hosting remotely). |
+| `MCP_TRANSPORT` | `stdio` | `stdio` for local clients, or `http` to serve MCP over Streamable HTTP at `/mcp`. |
+| `PORT` | `3000` | Port for the signing web server (and the `/mcp` endpoint in http mode). |
+| `HOST` | `127.0.0.1` | Interface to bind (localhost only by default). Set `0.0.0.0` to expose remotely. |
+| `PUBLIC_BASE_URL` | `http://localhost:<PORT>` | Base URL used in signing links and the `/mcp` URL (set when hosting remotely). |
 | `DEFAULT_CHAIN_ID` | `11155111` | Default chain (Sepolia testnet). |
 | `LOG_LEVEL` | `info` | `error` \| `warn` \| `info` \| `debug` (logs go to stderr). |
 | `MCP_DATA_DIR` | `~/.mcp-blockchain` | Where pending transactions are stored. |
 | `RPC_URL_<chainId>` | built-in public RPC | Override the RPC for a chain, e.g. `RPC_URL_1=https://…`. |
 | `INFURA_API_KEY` | — | If set, upgrades default RPCs to Infura. |
 | `ETHERSCAN_API_KEY` | — | If set, `read-contract` can auto-fetch verified ABIs. |
+| `MCP_ALLOWED_HOSTS` | — | Comma-separated Host allowlist for http mode (enables DNS-rebind protection). |
+| `MCP_ALLOWED_ORIGINS` | — | Comma-separated Origin allowlist for http mode (enables DNS-rebind protection). |
 
 ## Supported chains
 

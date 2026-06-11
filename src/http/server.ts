@@ -10,6 +10,7 @@ import {
   markSubmitted,
 } from '../services/transactionService.js';
 import { renderIndexPage, renderSigningPage } from './signingPage.js';
+import { mountMcpEndpoint } from './mcpHttp.js';
 
 /** Shapes a chain for the browser, including MetaMask `wallet_addEthereumChain` params. */
 function chainView(chain: Chain) {
@@ -52,7 +53,10 @@ function txView(id: string) {
 export function createApp(): express.Express {
   const app = express();
   app.disable('x-powered-by');
-  app.use(express.json({ limit: '256kb' }));
+  app.use(express.json({ limit: '1mb' }));
+
+  // MCP over Streamable HTTP, for remote/web clients (alongside stdio).
+  mountMcpEndpoint(app);
 
   // Baseline security headers for every response.
   app.use((_req: Request, res: Response, next: NextFunction) => {

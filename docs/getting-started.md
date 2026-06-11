@@ -7,20 +7,10 @@ assistant.
 
 - **Node.js 18 or higher** (nothing else — no database, no Redis, no API keys).
 
-## Install
-
-```bash
-git clone https://github.com/zhangzhongnan928/mcp-blockchain-server.git
-cd mcp-blockchain-server
-npm install
-```
-
-`npm install` compiles the TypeScript to `build/` automatically (via the
-`prepare` script). To rebuild later, run `npm run build`.
-
 ## Connect to an MCP client
 
 The server speaks MCP over stdio, so an MCP client launches it as a subprocess.
+The published package runs directly with `npx` — no clone or build required.
 
 ### Claude Desktop
 
@@ -30,15 +20,50 @@ Open **Settings → Developer → Edit Config** and add:
 {
   "mcpServers": {
     "blockchain": {
-      "command": "node",
-      "args": ["/absolute/path/to/mcp-blockchain-server/build/index.js"]
+      "command": "npx",
+      "args": ["-y", "mcp-blockchain-server"]
     }
   }
 }
 ```
 
-Use an **absolute** path to `build/index.js`. Restart Claude Desktop; the
-blockchain tools appear in the tools menu.
+Restart Claude Desktop; the blockchain tools appear in the tools menu.
+
+### Other clients
+
+The same block works in any client that launches stdio MCP servers — Cursor
+(`.cursor/mcp.json`), Cline, Windsurf, VS Code (`.vscode/mcp.json`), and others:
+
+```json
+{ "command": "npx", "args": ["-y", "mcp-blockchain-server"] }
+```
+
+### Remote / HTTP clients
+
+For clients that connect over HTTP rather than spawning a subprocess, run the
+server in HTTP mode (it serves MCP at `/mcp` and the signing page on one port):
+
+```bash
+MCP_TRANSPORT=http PUBLIC_BASE_URL=https://your-host npx -y mcp-blockchain-server
+```
+
+Point the client at `https://your-host/mcp`. Use `HOST=0.0.0.0` to bind a public
+interface (or keep `127.0.0.1` behind a reverse proxy), and set
+`MCP_ALLOWED_HOSTS` / `MCP_ALLOWED_ORIGINS` when exposing it publicly.
+
+### Run from source
+
+```bash
+git clone https://github.com/zhangzhongnan928/mcp-blockchain-server.git
+cd mcp-blockchain-server
+npm install   # installs and builds via the prepare script
+```
+
+Then point the client at the build:
+
+```json
+{ "command": "node", "args": ["/absolute/path/to/mcp-blockchain-server/build/index.js"] }
+```
 
 ### Passing configuration
 

@@ -1,6 +1,6 @@
 {
   "name": "mcp-blockchain-server",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A self-contained MCP server that lets AI assistants read blockchain data and prepare transactions, while users keep full custody of their keys and sign in their own wallet.",
   "main": "build/index.js",
   "type": "module",

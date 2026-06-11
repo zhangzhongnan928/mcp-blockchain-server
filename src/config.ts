@@ -16,6 +16,16 @@ function parsePort(value: string | undefined, fallback: number): number {
   return Number.isInteger(parsed) && parsed > 0 && parsed < 65536 ? parsed : fallback;
 }
 
+/** Current server version (single source of truth). */
+export const VERSION = '0.3.0';
+
+function parseList(value: string | undefined): string[] {
+  return (value || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 const port = parsePort(process.env.PORT, 3000);
 
 // Where the signing page is reachable. Defaults to localhost; override
@@ -39,6 +49,18 @@ export const config = {
   etherscanApiKey: process.env.ETHERSCAN_API_KEY || '',
   /** Optional Infura key, used to upgrade default public RPCs when present. */
   infuraApiKey: process.env.INFURA_API_KEY || '',
+  /**
+   * Which MCP transport to expose:
+   *  - "stdio" (default): the process is launched by a local client; MCP runs
+   *    over stdio. The signing server still runs for local links.
+   *  - "http": the process is a long-running server; MCP is served over
+   *    Streamable HTTP at /mcp alongside the signing page.
+   */
+  transport: process.env.MCP_TRANSPORT === 'http' ? ('http' as const) : ('stdio' as const),
+  /** Allowed Host header values for the HTTP transport (enables DNS-rebind protection when set). */
+  mcpAllowedHosts: parseList(process.env.MCP_ALLOWED_HOSTS),
+  /** Allowed Origin values for the HTTP transport (enables DNS-rebind protection when set). */
+  mcpAllowedOrigins: parseList(process.env.MCP_ALLOWED_ORIGINS),
 } as const;
 
 export type AppConfig = typeof config;
