@@ -174,6 +174,18 @@ npm test           # run the test suite (node:test)
 npm run typecheck  # type-check without emitting
 ```
 
+### Releasing
+
+CI (build + tests) runs on every push and PR. To publish a new version to npm:
+
+1. Add an `NPM_TOKEN` repository secret (an npm automation token) — once.
+2. Bump the version and tag: `npm version patch` (or `minor` / `major`), then
+   `git push --follow-tags`.
+3. Create a GitHub Release for that tag. The release workflow runs the tests and
+   publishes to npm (with provenance).
+
+You can also publish manually: `npm publish`.
+
 ## Security
 
 - **Private keys never reach the server.** It only prepares transactions; the
