@@ -88,5 +88,14 @@ Base URL: `PUBLIC_BASE_URL` (default `http://localhost:3000`).
 | `POST /api/tx/:id/rejected` | Marks a pending tx rejected. |
 | `GET /tx/:id` | The HTML signing page. |
 | `GET /` | A minimal landing page. |
+| `POST /GET /DELETE /mcp` | MCP Streamable HTTP endpoint (only relevant in `MCP_TRANSPORT=http`). |
 
 Errors are returned as `{ "error": "message" }` with an appropriate HTTP status.
+
+## MCP over HTTP
+
+When `MCP_TRANSPORT=http`, the MCP protocol is available at `/mcp` using the
+Streamable HTTP transport. Connect a client to `<PUBLIC_BASE_URL>/mcp`; an
+`initialize` request opens a session returned in the `Mcp-Session-Id` header,
+which subsequent requests must include. This is in addition to the tools above —
+the same five tools are exposed regardless of transport.

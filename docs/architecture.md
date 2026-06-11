@@ -2,11 +2,25 @@
 
 The server is a **single Node.js process** that exposes two interfaces:
 
-1. An **MCP server over stdio** — what the AI assistant talks to.
+1. An **MCP server** — what the AI assistant talks to. It runs over **stdio**
+   (default, for local clients) or **Streamable HTTP** at `/mcp` (for
+   remote/web clients), selected with `MCP_TRANSPORT`.
 2. An **embedded HTTP server** — serves the transaction signing page and the
-   small API that page uses.
+   small API that page uses. In HTTP transport mode it also hosts `/mcp`, so
+   MCP and signing share one port.
 
 There is no database, cache, message queue, or separate frontend.
+
+## Transports
+
+| Mode (`MCP_TRANSPORT`) | MCP interface | Used by |
+| --- | --- | --- |
+| `stdio` (default) | stdin/stdout of the subprocess | Local clients that launch the server (Claude Desktop, Cursor, …). |
+| `http` | `POST/GET/DELETE /mcp` (Streamable HTTP, session-based) | Remote/web clients; one hosted instance. |
+
+In both modes the signing page is served over HTTP. `src/http/mcpHttp.ts`
+implements the stateful Streamable HTTP transport: an `initialize` request opens
+a session (returned via the `Mcp-Session-Id` header) that later requests reuse.
 
 ```
             stdio (MCP)                         HTTP (localhost)

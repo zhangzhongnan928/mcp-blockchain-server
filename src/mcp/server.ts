@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { config } from '../config.js';
+import { config, VERSION } from '../config.js';
 import { getChains } from '../chains.js';
 import { getBalance } from '../services/accountService.js';
 import { readContract } from '../services/contractService.js';
@@ -11,12 +11,7 @@ import {
 } from '../services/transactionService.js';
 import { logger } from '../logger.js';
 
-export const server = new McpServer({
-  name: 'mcp-blockchain-server',
-  version: '0.2.0',
-});
-
-/** Wraps a tool handler so any thrown error becomes a clean MCP error result. */
+/** Formats a successful text result for an MCP tool. */
 function text(value: string) {
   return { content: [{ type: 'text' as const, text: value }] };
 }
@@ -29,7 +24,7 @@ function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function registerTools(): void {
+function registerTools(server: McpServer): void {
   server.registerTool(
     'get-chains',
     {
@@ -179,14 +174,20 @@ function registerTools(): void {
     },
   );
 
-  logger.info('Registered MCP tools');
+  logger.debug('Registered MCP tools');
 }
 
-/** Registers tools and connects the server over stdio. */
-export async function startMcpServer(): Promise<McpServer> {
-  registerTools();
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
+/** Creates a fresh MCP server instance with all tools registered. */
+export function createMcpServer(): McpServer {
+  const server = new McpServer({ name: 'mcp-blockchain-server', version: VERSION });
+  registerTools(server);
+  return server;
+}
+
+/** Creates a server and connects it over stdio (for local MCP clients). */
+export async function startStdioServer(): Promise<McpServer> {
+  const server = createMcpServer();
+  await server.connect(new StdioServerTransport());
   logger.info('MCP server connected over stdio');
   return server;
 }
