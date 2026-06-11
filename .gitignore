@@ -10,6 +10,9 @@ coverage/
 build/
 dist/
 
+# npm pack output
+*.tgz
+
 # misc
 .DS_Store
 .env
