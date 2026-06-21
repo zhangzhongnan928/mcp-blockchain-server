@@ -33,8 +33,8 @@ function chainView(chain: Chain) {
   };
 }
 
-function txView(id: string) {
-  const tx = getTransactionById(id);
+async function txView(id: string) {
+  const tx = await getTransactionById(id);
   if (!tx) return undefined;
   return {
     id: tx.id,
@@ -54,7 +54,15 @@ function txView(id: string) {
 export function createApp(): express.Express {
   const app = express();
   app.disable('x-powered-by');
-  app.use(express.json({ limit: '1mb' }));
+
+  // Parse JSON bodies — but skip it when the body is already parsed. On Vercel
+  // the serverless runtime consumes the request stream and populates req.body;
+  // running express.json() again would block waiting on an exhausted stream.
+  const parseJson = express.json({ limit: '1mb' });
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (req.body !== undefined) return next();
+    parseJson(req, res, next);
+  });
 
   // MCP over Streamable HTTP, for remote/web clients (alongside stdio).
   mountMcpEndpoint(app);
@@ -77,8 +85,8 @@ export function createApp(): express.Express {
     res.json({ chains: getChains().map(chainView) });
   });
 
-  app.get('/api/tx/:id', (req, res) => {
-    const tx = txView(req.params.id);
+  app.get('/api/tx/:id', async (req, res) => {
+    const tx = await txView(req.params.id);
     if (!tx) return res.status(404).json({ error: 'Transaction not found.' });
     const chain = getChainById(tx.chainId);
     if (!chain) return res.status(500).json({ error: 'Unknown chain for transaction.' });

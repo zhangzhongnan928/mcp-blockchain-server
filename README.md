@@ -102,9 +102,11 @@ put it behind a reverse proxy). When exposed publicly, set `MCP_ALLOWED_HOSTS`
 and/or `MCP_ALLOWED_ORIGINS` to enable DNS-rebinding protection, and front it
 with HTTPS and access control.
 
-To host it as a custom connector (Docker, one-click Render, or a quick tunnel
-for testing) and wire it into Claude's **Add custom connector** dialog, see the
-**[deployment guide](docs/deployment.md)**.
+To host it as a custom connector (one-click Render, Vercel, Docker, or a quick
+tunnel for testing) and wire it into Claude's **Add custom connector** dialog,
+see the **[deployment guide](docs/deployment.md)**. On stateless hosts like
+Vercel, point the store at Redis (`UPSTASH_REDIS_REST_URL` /
+`UPSTASH_REDIS_REST_TOKEN`) so the signing flow persists across requests.
 
 ## Tools
 
@@ -155,7 +157,8 @@ Everything is optional. Copy `.env.example` to `.env` to override defaults.
 | `PUBLIC_BASE_URL` | `http://localhost:<PORT>` | Base URL used in signing links and the `/mcp` URL (set when hosting remotely). |
 | `DEFAULT_CHAIN_ID` | `11155111` | Default chain (Sepolia testnet). |
 | `LOG_LEVEL` | `info` | `error` \| `warn` \| `info` \| `debug` (logs go to stderr). |
-| `MCP_DATA_DIR` | `~/.mcp-blockchain` | Where pending transactions are stored. |
+| `MCP_DATA_DIR` | `~/.mcp-blockchain` | Where pending transactions are stored (file backend). |
+| `UPSTASH_REDIS_REST_URL` / `_TOKEN` | — | Use a Redis store instead of the file backend. Required on stateless hosts (Vercel). `KV_REST_API_URL` / `_TOKEN` also work. |
 | `RPC_URL_<chainId>` | built-in public RPC | Override the RPC for a chain, e.g. `RPC_URL_1=https://…`. |
 | `INFURA_API_KEY` | — | If set, upgrades default RPCs to Infura. |
 | `ETHERSCAN_API_KEY` | — | If set, `read-contract` can auto-fetch verified ABIs. |

@@ -1,19 +1,21 @@
-import { randomUUID } from 'node:crypto';
 import type { Express, Request, Response } from 'express';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
 import { createMcpServer } from '../mcp/server.js';
 
 /**
- * Mounts the MCP Streamable HTTP transport at `/mcp` on an existing Express
- * app, so remote/web MCP clients can use the server over HTTP (in addition to,
- * or instead of, stdio). Uses the standard stateful pattern: an `initialize`
- * request creates a session; later requests carry the `mcp-session-id` header.
+ * Mounts the MCP Streamable HTTP transport at `/mcp` on an existing Express app,
+ * so remote/web MCP clients can use the server over HTTP (in addition to, or
+ * instead of, stdio).
+ *
+ * This uses the transport's **stateless** mode: every POST spins up a fresh
+ * server + transport, handles the single JSON-RPC request, and tears down. All
+ * of this server's tools are plain request/response (no server-initiated
+ * notifications), so nothing is lost — and it works identically on a long-lived
+ * container and on stateless serverless (Vercel), where an in-memory session map
+ * would not survive between requests.
  */
-
-const transports = new Map<string, StreamableHTTPServerTransport>();
 
 function setCors(res: Response): void {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -30,41 +32,24 @@ export function mountMcpEndpoint(app: Express): void {
 
   app.post('/mcp', async (req: Request, res: Response) => {
     setCors(res);
+
+    const dnsProtection = config.mcpAllowedHosts.length > 0 || config.mcpAllowedOrigins.length > 0;
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined, // stateless: no session is created or tracked
+      enableDnsRebindingProtection: dnsProtection,
+      allowedHosts: dnsProtection ? config.mcpAllowedHosts : undefined,
+      allowedOrigins: dnsProtection ? config.mcpAllowedOrigins : undefined,
+    });
+    const server = createMcpServer();
+
+    // Tear down per-request resources once the response is done.
+    res.on('close', () => {
+      void transport.close();
+      void server.close();
+    });
+
     try {
-      const sessionId = req.headers['mcp-session-id'] as string | undefined;
-      let transport = sessionId ? transports.get(sessionId) : undefined;
-
-      if (!transport) {
-        // A new session may only begin with an `initialize` request.
-        if (sessionId || !isInitializeRequest(req.body)) {
-          res.status(400).json({
-            jsonrpc: '2.0',
-            error: { code: -32000, message: 'No valid session. Send an initialize request first.' },
-            id: null,
-          });
-          return;
-        }
-
-        const dnsProtection = config.mcpAllowedHosts.length > 0 || config.mcpAllowedOrigins.length > 0;
-        const newTransport = new StreamableHTTPServerTransport({
-          sessionIdGenerator: () => randomUUID(),
-          enableDnsRebindingProtection: dnsProtection,
-          allowedHosts: dnsProtection ? config.mcpAllowedHosts : undefined,
-          allowedOrigins: dnsProtection ? config.mcpAllowedOrigins : undefined,
-          onsessioninitialized: (sid) => {
-            transports.set(sid, newTransport);
-            logger.info(`MCP HTTP session opened: ${sid}`);
-          },
-        });
-        newTransport.onclose = () => {
-          const sid = newTransport.sessionId;
-          if (sid && transports.delete(sid)) logger.info(`MCP HTTP session closed: ${sid}`);
-        };
-
-        await createMcpServer().connect(newTransport);
-        transport = newTransport;
-      }
-
+      await server.connect(transport);
       await transport.handleRequest(req, res, req.body);
     } catch (error) {
       logger.error('Error handling MCP POST', error);
@@ -78,19 +63,18 @@ export function mountMcpEndpoint(app: Express): void {
     }
   });
 
-  // GET (SSE stream) and DELETE (session teardown) reuse the session transport.
-  const handleSession = async (req: Request, res: Response) => {
+  // In stateless mode there is no session to attach an SSE stream to, and no
+  // session to delete. Report that clearly rather than hanging.
+  const notAllowed = (_req: Request, res: Response) => {
     setCors(res);
-    const sessionId = req.headers['mcp-session-id'] as string | undefined;
-    const transport = sessionId ? transports.get(sessionId) : undefined;
-    if (!transport) {
-      res.status(400).send('Invalid or missing session ID');
-      return;
-    }
-    await transport.handleRequest(req, res);
+    res.status(405).json({
+      jsonrpc: '2.0',
+      error: { code: -32000, message: 'Method not allowed: this endpoint is stateless (POST only).' },
+      id: null,
+    });
   };
-  app.get('/mcp', handleSession);
-  app.delete('/mcp', handleSession);
+  app.get('/mcp', notAllowed);
+  app.delete('/mcp', notAllowed);
 
-  logger.info('Mounted MCP Streamable HTTP endpoint at /mcp');
+  logger.info('Mounted MCP Streamable HTTP endpoint at /mcp (stateless)');
 }

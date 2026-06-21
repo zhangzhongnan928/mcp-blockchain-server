@@ -29,7 +29,7 @@ test('create, get and persist a transaction', async () => {
   await store.initStore();
   await store.createTransaction(sample('id-1'));
 
-  const got = store.getTransaction('id-1');
+  const got = await store.getTransaction('id-1');
   assert.equal(got?.status, 'PENDING');
 
   const onDisk = JSON.parse(readFileSync(path.join(dir, 'transactions.json'), 'utf8'));
@@ -39,7 +39,7 @@ test('create, get and persist a transaction', async () => {
 
 test('update mutates status and bumps updatedAt', async () => {
   await store.createTransaction(sample('id-2'));
-  const before = store.getTransaction('id-2')!.updatedAt;
+  const before = (await store.getTransaction('id-2'))!.updatedAt;
   await new Promise((r) => setTimeout(r, 5));
 
   const updated = await store.updateTransaction('id-2', { status: 'CONFIRMED', txHash: '0xabc' });
@@ -54,7 +54,7 @@ test('updating a missing transaction returns undefined', async () => {
 });
 
 test('listTransactions returns most-recent first', async () => {
-  const all = store.listTransactions();
+  const all = await store.listTransactions();
   assert.ok(all.length >= 2);
   for (let i = 1; i < all.length; i++) {
     assert.ok(all[i - 1].createdAt >= all[i].createdAt);

@@ -152,7 +152,7 @@ function registerTools(server: McpServer): void {
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
     async ({ id }) => {
-      const tx = getTransactionById(id);
+      const tx = await getTransactionById(id);
       if (!tx) return errorText(`Transaction ${id} not found.`);
       return text(
         JSON.stringify(

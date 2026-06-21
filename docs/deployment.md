@@ -79,6 +79,34 @@ Railway, …) inject their own `PORT`; the server honors it.
 
 ---
 
+## Option D — Vercel (serverless)
+
+Vercel runs the server as **stateless serverless functions** rather than a
+long-lived process, so it needs a shared store for pending transactions. The
+repo is preconfigured for this — [`vercel.json`](../vercel.json) builds the
+project and routes every request (`/mcp`, `/tx/<id>`, `/api/*`) to one function.
+
+1. **Add a Redis store (free).** In your Vercel project: **Storage → Create
+   Database → Upstash for Redis** (free plan). Connecting it injects
+   `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` (a.k.a.
+   `KV_REST_API_URL` / `KV_REST_API_TOKEN`) into the project automatically — the
+   server reads either pair. Without this, reads succeed but the signing flow
+   (`prepare-transaction` → sign → status) can't persist across requests.
+2. **Import the repo.** **Add New → Project**, select this repo, deploy. No
+   build settings to change — `vercel.json` handles the build and routing.
+3. **Base URL is automatic.** The server derives signing links from Vercel's
+   `VERCEL_PROJECT_PRODUCTION_URL`, so you usually don't need `PUBLIC_BASE_URL`.
+   (Set it explicitly if you use a custom domain.)
+
+Your connector URL: `https://<your-project>.vercel.app/mcp`
+
+> Notes: the `/mcp` endpoint is **stateless** (POST only — a `GET` returns 405,
+> which is expected). Transaction confirmation is reconciled lazily when the
+> status is polled, since serverless can't run a background watcher. Pending
+> entries expire from Redis after 7 days.
+
+---
+
 ## Connect it in Claude
 
 In the **"Add custom connector"** dialog:
@@ -101,7 +129,8 @@ the tools are available.
 | `MCP_TRANSPORT` | `http` (the Docker image sets this) |
 | `HOST` | `0.0.0.0` (the Docker image sets this) |
 | `PORT` | Usually injected by the platform; defaults to `3000`. |
-| `PUBLIC_BASE_URL` | Your public `https://…` URL. Auto-derived on Render. **Required elsewhere** for working signing links. |
+| `PUBLIC_BASE_URL` | Your public `https://…` URL. Auto-derived on Render and Vercel. **Required elsewhere** for working signing links. |
+| `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | Redis store credentials. **Required on Vercel** (or any stateless/multi-instance host); auto-injected by Vercel's Upstash integration. `KV_REST_API_URL` / `KV_REST_API_TOKEN` also accepted. |
 | `MCP_ALLOWED_HOSTS` | Optional. Comma-separated hostnames to accept on `/mcp` (enables DNS-rebind protection). |
 | `MCP_ALLOWED_ORIGINS` | Optional. Comma-separated allowed `Origin` values. |
 

@@ -28,11 +28,17 @@ function parseList(value: string | undefined): string[] {
 
 const port = parsePort(process.env.PORT, 3000);
 
+// Vercel exposes the deployment host (no scheme) rather than a full URL. Prefer
+// the stable production domain over the per-deployment URL.
+const vercelHost = process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL;
+const vercelBaseUrl = vercelHost ? `https://${vercelHost}` : '';
+
 // An explicit public base URL, if the user pinned one (or the platform provides
 // one). When unset, the URL is derived at runtime from the port we actually
 // bind — see runtime.ts — so signing links always point at *this* server.
 const explicitPublicBaseUrl =
-  (process.env.PUBLIC_BASE_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/$/, '') || undefined;
+  (process.env.PUBLIC_BASE_URL || process.env.RENDER_EXTERNAL_URL || vercelBaseUrl || '').replace(/\/$/, '') ||
+  undefined;
 
 export const config = {
   /** Desired port for the embedded HTTP (signing) server. */
