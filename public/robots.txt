@@ -1,0 +1,4 @@
+# This host runs the MCP Blockchain Server (signing page + /mcp endpoint).
+# Nothing here is meant for search indexing.
+User-agent: *
+Disallow: /
