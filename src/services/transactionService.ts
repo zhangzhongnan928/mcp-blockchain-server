@@ -9,6 +9,34 @@ import {
   type StoredTransaction,
 } from '../store.js';
 
+/**
+ * Reconciles a SUBMITTED transaction with the chain: if its receipt is now
+ * available, advances it to CONFIRMED or FAILED. This is a non-blocking,
+ * read-time check (the receipt is fetched once, not awaited-until-mined) so it
+ * works on stateless serverless hosts where no background task can run after a
+ * response is sent. Idempotent and safe to call on any status.
+ */
+async function reconcileStatus(tx: StoredTransaction): Promise<StoredTransaction> {
+  if (tx.status !== 'SUBMITTED' || !tx.txHash) return tx;
+  try {
+    const provider = getProvider(tx.chainId);
+    const receipt = await provider.getTransactionReceipt(tx.txHash);
+    if (!receipt) return tx; // not mined yet
+
+    const patch =
+      receipt.status === 1
+        ? { status: 'CONFIRMED' as const }
+        : { status: 'FAILED' as const, error: 'Transaction reverted on-chain.' };
+    const updated = await updateTransaction(tx.id, patch);
+    if (updated) logger.info(`Transaction ${tx.id} reconciled to ${updated.status} (${tx.txHash})`);
+    return updated ?? tx;
+  } catch (error) {
+    // A transient RPC error shouldn't change the stored status; report it next poll.
+    logger.warn(`Could not reconcile transaction ${tx.id}`, error);
+    return tx;
+  }
+}
+
 export interface PrepareTransactionInput {
   chainId: string;
   to: string;
@@ -79,9 +107,13 @@ export async function prepareTransaction(input: PrepareTransactionInput): Promis
   return tx;
 }
 
-/** Returns a stored transaction by id. */
-export function getTransactionById(id: string): StoredTransaction | undefined {
-  return getTransaction(id);
+/**
+ * Returns a stored transaction by id, reconciling its status against the chain
+ * first (so a SUBMITTED tx that has since been mined surfaces as CONFIRMED).
+ */
+export async function getTransactionById(id: string): Promise<StoredTransaction | undefined> {
+  const tx = await getTransaction(id);
+  return tx ? reconcileStatus(tx) : undefined;
 }
 
 /**
@@ -93,7 +125,7 @@ export async function markSubmitted(
   txHash: string,
   from?: string,
 ): Promise<StoredTransaction> {
-  const tx = getTransaction(id);
+  const tx = await getTransaction(id);
   if (!tx) throw new Error(`Transaction ${id} not found.`);
   if (tx.status !== 'PENDING') {
     throw new Error(`Transaction ${id} is already ${tx.status} and cannot be submitted again.`);
@@ -108,37 +140,17 @@ export async function markSubmitted(
     from: from ? toChecksumAddress(from) : tx.from,
   });
 
-  // Watch for confirmation without blocking the caller.
-  void watchConfirmation(id, txHash, tx.chainId);
+  // Confirmation is reconciled lazily on the next status read (see
+  // reconcileStatus) so the flow works on stateless serverless hosts.
   return updated!;
 }
 
 /** Marks a pending transaction as rejected by the user. */
 export async function markRejected(id: string): Promise<StoredTransaction> {
-  const tx = getTransaction(id);
+  const tx = await getTransaction(id);
   if (!tx) throw new Error(`Transaction ${id} not found.`);
   if (tx.status !== 'PENDING') {
     throw new Error(`Transaction ${id} is already ${tx.status} and cannot be rejected.`);
   }
   return (await updateTransaction(id, { status: 'REJECTED' }))!;
-}
-
-/** Waits for the transaction to be mined and updates its final status. */
-async function watchConfirmation(id: string, txHash: string, chainId: string): Promise<void> {
-  try {
-    const provider = getProvider(chainId);
-    const receipt = await provider.waitForTransaction(txHash);
-
-    if (receipt && receipt.status === 1) {
-      await updateTransaction(id, { status: 'CONFIRMED' });
-      logger.info(`Transaction ${id} confirmed (${txHash})`);
-    } else {
-      await updateTransaction(id, { status: 'FAILED', error: 'Transaction reverted on-chain.' });
-      logger.warn(`Transaction ${id} reverted (${txHash})`);
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    await updateTransaction(id, { status: 'FAILED', error: message });
-    logger.error(`Error watching confirmation for ${id}`, error);
-  }
 }

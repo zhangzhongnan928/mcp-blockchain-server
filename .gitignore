@@ -40,3 +40,6 @@ logs/
 
 # Typescript
 *.tsbuildinfo
+
+# Vercel
+.vercel/
